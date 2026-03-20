@@ -1,0 +1,12 @@
+{
+  "name": "ai-craft-world",
+  "version": "0.1.0",
+  "description": "AI Craft World - 話しかけるだけで仲間が働くクラフトゲーム",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve .",
+    "start": "npx serve ."
+  },
+  "keywords": ["game", "craft", "ai", "companion"],
+  "license": "MIT"
+}
