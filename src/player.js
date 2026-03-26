@@ -20,6 +20,7 @@ export class Player {
     this.invincibleTimer = 0;
     this.attackCooldown = 0;
     this.speed = PLAYER_SPEED;
+    this.spawnPoint = { x, y }; // Updated when sleeping in a bed
 
     // Initialize empty inventory
     for (let i = 0; i < PLAYER_INVENTORY_SIZE; i++) {

@@ -3,7 +3,7 @@ import { Player } from './player.js';
 import { Companion } from './companion.js';
 import { EnemyManager } from './enemies.js';
 import { Renderer } from './renderer.js';
-import { RECIPES, ITEMS, DAY_LENGTH } from './constants.js';
+import { RECIPES, ITEMS, TILES, DAY_LENGTH, DAWN_START, NIGHT_START } from './constants.js';
 
 export class Game {
   constructor(canvas) {
@@ -35,6 +35,9 @@ export class Game {
     this.chatInput = '';
     this.messageHistory = [];
     this.paused = false;
+    this.sleeping = false;
+    this.sleepTimer = 0;
+    this.sleepDuration = 1.5; // seconds for sleep transition
 
     // Give starter items
     this.player.addItem('wood', 10);
@@ -45,7 +48,7 @@ export class Game {
     setTimeout(() => {
       this.companion.say('こんにちは！一緒にがんばろう！');
       this.addMessage('system', `${this.companion.name}が仲間になった！`);
-      this.addMessage('system', 'WASD: 移動 | Space: 採掘 | E: 食べる | C: クラフト');
+      this.addMessage('system', 'WASD: 移動 | Space: 採掘 | E: 食べる/寝る | C: クラフト');
       this.addMessage('system', '1-0: アイテム選択 | Q: 設置 | Enter: AI相棒に話す');
     }, 500);
 
@@ -91,7 +94,9 @@ export class Game {
           this.showCraftMenu = !this.showCraftMenu;
           break;
         case 'KeyE':
-          if (this.player.eat()) {
+          if (this.trySleep()) {
+            // Sleeping in bed
+          } else if (this.player.eat()) {
             this.addMessage('system', '食べ物を食べた！');
           }
           break;
@@ -169,6 +174,39 @@ export class Game {
     this.chatInput = '';
   }
 
+  trySleep() {
+    if (this.sleeping) return false;
+
+    // Check if it's night time (can only sleep at night/dusk)
+    const isNightish = this.timeOfDay > NIGHT_START / DAY_LENGTH || this.timeOfDay < DAWN_START / DAY_LENGTH + 0.05;
+    if (!isNightish) {
+      this.addMessage('system', 'ベッドは夜にしか使えない');
+      return false;
+    }
+
+    // Check for a bed tile near the player
+    const facing = this.player.getFacingTile();
+    const standingTile = { x: Math.floor(this.player.x), y: Math.floor(this.player.y) };
+
+    let bedTile = null;
+    for (const pos of [facing, standingTile]) {
+      if (this.world.getTile(pos.x, pos.y) === TILES.BED && this.player.canReach(pos.x, pos.y)) {
+        bedTile = pos;
+        break;
+      }
+    }
+
+    if (!bedTile) return false;
+
+    // Set spawn point and start sleep
+    this.player.spawnPoint = { x: bedTile.x + 0.5, y: bedTile.y + 0.5 };
+    this.sleeping = true;
+    this.sleepTimer = 0;
+    this.addMessage('system', 'ベッドで眠る... スポーン地点を更新した');
+    this.companion.say('おやすみなさい！');
+    return true;
+  }
+
   addMessage(sender, text) {
     this.messageHistory.push({
       sender,
@@ -182,6 +220,24 @@ export class Game {
 
   update(dt) {
     if (this.paused || this.showCraftMenu) return;
+
+    // Handle sleep transition
+    if (this.sleeping) {
+      this.sleepTimer += dt;
+      if (this.sleepTimer >= this.sleepDuration) {
+        // Skip to dawn
+        this.timeOfDay = DAWN_START / DAY_LENGTH + 0.05;
+        this.dayCount++;
+        this.sleeping = false;
+        this.sleepTimer = 0;
+        this.addMessage('system', `Day ${this.dayCount} - よく眠れた！`);
+        // Heal a bit from sleeping
+        this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
+        // Despawn all enemies
+        this.enemyManager.enemies = [];
+      }
+      return; // Don't update anything else while sleeping
+    }
 
     // Update time
     this.gameTime += dt;
@@ -227,7 +283,7 @@ export class Game {
     // Check player death
     if (!this.player.isAlive) {
       this.addMessage('system', 'やられた... リスポーン中...');
-      const spawn = this.world.getSpawnPoint();
+      const spawn = this.player.spawnPoint;
       this.player.x = spawn.x;
       this.player.y = spawn.y;
       this.player.hp = this.player.maxHp / 2;
