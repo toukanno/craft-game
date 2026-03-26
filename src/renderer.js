@@ -73,6 +73,11 @@ export class Renderer {
     // Apply night overlay
     this.drawNightOverlay(world, timeOfDay);
 
+    // Draw sleep overlay
+    if (game.sleeping) {
+      this.drawSleepOverlay(game);
+    }
+
     // Draw UI
     this.drawUI(game);
   }
@@ -117,6 +122,9 @@ export class Renderer {
         break;
       case TILES.CHEST:
         this.drawChestTile(sx, sy);
+        break;
+      case TILES.BED:
+        this.drawBedTile(sx, sy);
         break;
       case TILES.FLOWER:
         this.drawFlower(sx, sy);
@@ -228,6 +236,23 @@ export class Renderer {
     ctx.fillRect(sx + s * 0.15, sy + s * 0.3, s * 0.7, s * 0.15);
     ctx.fillStyle = '#FFD54F';
     ctx.fillRect(sx + s * 0.43, sy + s * 0.42, s * 0.14, s * 0.1);
+  }
+
+  drawBedTile(sx, sy) {
+    const { ctx } = this;
+    const s = this.scale;
+    // Frame
+    ctx.fillStyle = '#5D4037';
+    ctx.fillRect(sx + s * 0.1, sy + s * 0.25, s * 0.8, s * 0.6);
+    // Mattress
+    ctx.fillStyle = '#E57373';
+    ctx.fillRect(sx + s * 0.15, sy + s * 0.3, s * 0.7, s * 0.5);
+    // Pillow
+    ctx.fillStyle = '#FFECB3';
+    ctx.fillRect(sx + s * 0.15, sy + s * 0.3, s * 0.25, s * 0.2);
+    // Blanket fold
+    ctx.fillStyle = '#C62828';
+    ctx.fillRect(sx + s * 0.15, sy + s * 0.55, s * 0.7, s * 0.08);
   }
 
   drawFlower(sx, sy) {
@@ -449,13 +474,10 @@ export class Renderer {
   drawMiningProgress(player) {
     const { ctx } = this;
     const target = player.miningTarget;
-    const tile = TILE_INFO[player.miningTarget ? 0 : 0]; // placeholder
     const { x: sx, y: sy } = this.worldToScreen(target.x, target.y);
     const s = this.scale;
 
-    // Get actual tile info for progress
-    const tileType = TILE_INFO[0]; // We need the world reference here
-    const progress = Math.min(1, player.miningProgress / 30); // Approximate
+    const progress = Math.min(1, player.miningProgress / (player.miningTarget ? 30 : 1));
 
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
@@ -539,6 +561,33 @@ export class Renderer {
       const intensity = 1 - Math.abs(timeOfDay - 0.65) / 0.07;
       ctx.fillStyle = `rgba(255, 100, 30, ${intensity * 0.15})`;
       ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+  }
+
+  drawSleepOverlay(game) {
+    const { ctx } = this;
+    const progress = Math.min(1, game.sleepTimer / game.sleepDuration);
+
+    // Fade to black, then fade back
+    let alpha;
+    if (progress < 0.5) {
+      alpha = progress * 2; // Fade in
+    } else {
+      alpha = 1 - (progress - 0.5) * 2; // Fade out
+    }
+
+    ctx.fillStyle = `rgba(0, 0, 20, ${alpha * 0.95})`;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // "Sleeping..." text
+    if (alpha > 0.3) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('💤 眠っている...', this.canvas.width / 2, this.canvas.height / 2);
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
     }
   }
 
