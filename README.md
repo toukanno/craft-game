@@ -1,69 +1,79 @@
-# AI Craft World / AIクラフトワールド
+# Craft World 3D / クラフトワールド3D
 
-**話しかけるだけで仲間が働くクラフトゲーム**
+**ブラウザで遊べる3Dクラフトゲーム（マインクラフト風）**
 
-A 2D craft game where you explore, build, and survive alongside an AI companion
-who understands natural language commands.
+A browser-based 3D voxel sandbox built with Three.js. Explore a procedurally
+generated world, break and place blocks, and build whatever you want — no
+install required.
 
 ## Features
 
-- Procedurally generated world with 5 biomes (Forest, Plains, Desert, Mountains, Snow)
-- AI companion "Airi" who follows natural language commands
-- Resource gathering, crafting, and building
-- Day/night cycle with enemy spawning
-- Block placement and structure building
-- Inventory and crafting system
-
-## AI Companion Commands
-
-| Command | Action |
-|---------|--------|
-| 木を集めて / Gather wood | Companion harvests trees |
-| 石を掘って / Mine stone | Companion mines stone |
-| 家を建てて / Build house | Companion builds a small house |
-| 拠点に戻って / Return base | Companion returns to player |
-| ついてきて / Follow me | Companion follows player |
-| 敵を倒して / Fight | Companion enters combat mode |
-| 状態 / Status | Check companion status |
+- 3D voxel world rendered with Three.js
+- Chunk-based procedural terrain (Simplex noise + biomes)
+- Trees, beaches, snowy peaks, lakes
+- First-person controls with mouse-look (Pointer Lock API)
+- AABB physics with gravity, jumping and per-axis collision
+- Block breaking (left-click) and placing (right-click) with DDA voxel raycast
+- Hotbar with 8 placeable block types
+- Block-target wireframe highlight
+- Streaming chunk load/unload around the player
 
 ## Controls
 
-| Key | Action |
-|-----|--------|
-| WASD / Arrow Keys | Move |
-| Space | Mine / Attack |
-| Q | Place block |
-| E | Eat food |
-| C | Open crafting menu |
-| 1-0 | Select hotbar slot |
-| Enter | Talk to AI companion |
+| Key / Mouse | Action |
+|-------------|--------|
+| `W` `A` `S` `D` / Arrow keys | Move |
+| `Space` | Jump |
+| `Shift` | Sprint |
+| Mouse | Look around |
+| Left click | Break block |
+| Right click | Place block |
+| `1`〜`8` | Select hotbar slot |
+| Mouse wheel | Cycle hotbar |
+| `Esc` | Release pointer / pause |
 
 ## How to Run
 
-```bash
-# Serve locally (any static file server works)
-npx serve .
+No build step. Serve the directory with any static file server, then open
+`index.html` in a browser:
 
-# Or simply open index.html in a browser
+```bash
+# Option 1: npm script
+npm start
+
+# Option 2: any static server
+npx serve .
+python3 -m http.server 8000
 ```
 
-## Tech Stack
-
-- Pure JavaScript (ES Modules)
-- HTML5 Canvas for rendering
-- Simplex noise for procedural world generation
-- A* pathfinding for AI navigation
+> Three.js is loaded from a CDN via an `<script type="importmap">`, so an
+> internet connection is required on first load.
 
 ## Architecture
 
 ```
 src/
-├── constants.js   # Game constants, tile/item/recipe definitions
-├── noise.js       # Simplex noise for world generation
-├── world.js       # World generation, pathfinding, light map
-├── player.js      # Player movement, inventory, crafting, combat
-├── companion.js   # AI companion with NLP command processing
-├── enemies.js     # Enemy AI and spawn management
-├── renderer.js    # Canvas-based 2D renderer with UI
-└── game.js        # Main game loop, input handling, state management
+├── noise.js   # Simplex noise (terrain + tree placement)
+├── blocks.js  # Block ids, names, procedural textures, hotbar icons
+├── world.js   # Chunk generation, mesh building (face culling), DDA raycast
+├── player.js  # First-person camera, AABB physics, input, pointer lock
+└── main.js    # Three.js scene, lighting, hotbar UI, click handlers, loop
 ```
+
+### Implementation notes
+
+- **Chunks** are 16×16 columns of 64-block-tall voxels, stored as flat
+  `Uint8Array`s. Each chunk owns one `THREE.Group` of meshes — one per
+  (block id, face direction) so a single texture can repeat per face — and is
+  rebuilt on the next frame whenever a block changes.
+- **Face culling** skips faces whose neighbour is opaque, dropping the
+  vertex/face count by an order of magnitude vs. naive cubes.
+- **Targeting** uses an Amanatides–Woo (DDA) voxel raycast to find the first
+  solid block under the crosshair, plus the face hit (for placement).
+- **Player physics** is a simple AABB swept along each axis independently —
+  enough for stable wall sliding and standing on edges.
+
+## Tech Stack
+
+- Three.js 0.160 (loaded via CDN import map)
+- Pure ES Modules — no bundler, no build step
