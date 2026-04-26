@@ -135,14 +135,18 @@ export class Game {
 
     document.addEventListener('wheel', (e) => {
       if (!this.player.locked) return;
+      e.preventDefault();
       const dir = e.deltaY > 0 ? 1 : -1;
       this._setSlot(this.selectedSlot + dir);
-    }, { passive: true });
+    }, { passive: false });
 
     document.addEventListener('keydown', (e) => {
       if (e.code.startsWith('Digit')) {
         const n = Number(e.code.slice(5));
         if (n >= 1 && n <= PLACEABLE_BLOCKS.length) this._setSlot(n - 1);
+      }
+      if (this.player.locked && (e.code === 'Space' || e.code.startsWith('Arrow'))) {
+        e.preventDefault();
       }
       if (e.code === 'Escape') {
         // pointer lock release is automatic; show pause overlay

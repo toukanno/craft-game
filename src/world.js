@@ -313,6 +313,7 @@ export class World {
   // DDA voxel raycast
   raycast(origin, direction, maxDist = 6) {
     const o = origin;
+    if (direction.lengthSq() === 0) return null;
     const d = direction.clone().normalize();
     let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
     const stepX = d.x > 0 ? 1 : -1;

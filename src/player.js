@@ -58,11 +58,11 @@ export class Player {
   _installInput() {
     document.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.running = true;
+      this.running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     });
     document.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.running = false;
+      this.running = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -77,6 +77,13 @@ export class Player {
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.dom;
     });
+
+    // Prevent stuck movement when focus/pointer lock is lost
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.running = false;
+    });
+
   }
 
   requestLock() {
