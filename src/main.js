@@ -68,6 +68,10 @@ export class Game {
 
     // ---- Player ----
     this.player = new Player(this.camera, this.world, this.canvas);
+    // Make sure the camera reflects the spawn position before the first frame,
+    // otherwise the camera sits at (0,0,0) — inside the bedrock — and the
+    // scene appears as a flat color until the first player update.
+    this.player.syncCamera();
 
     // ---- Block selection wireframe ----
     const wireGeom = new THREE.BoxGeometry(1.002, 1.002, 1.002);
@@ -205,7 +209,7 @@ export class Game {
     if (dt > 0.1) dt = 0.1;
     this.lastTime = now;
 
-    if (this.player.locked) this.player.update(dt);
+    this.player.update(dt);
     this.world.update(this.player.position.x, this.player.position.z);
     this._updateSelection();
     this._updateHud();

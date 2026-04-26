@@ -107,22 +107,24 @@ export class Player {
     if (this.placeCooldown > 0) this.placeCooldown -= dt;
     if (this.breakCooldown > 0) this.breakCooldown -= dt;
 
-    // ----- Compute desired horizontal motion -----
+    // ----- Compute desired horizontal motion (only when locked) -----
     const wish = this._tmpVec.set(0, 0, 0);
-    const fwd = this.getForward();
-    const right = this.getRight();
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) wish.add(fwd);
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) wish.sub(fwd);
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) wish.add(right);
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) wish.sub(right);
-    if (wish.lengthSq() > 0) wish.normalize();
+    if (this.locked) {
+      const fwd = this.getForward();
+      const right = this.getRight();
+      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) wish.add(fwd);
+      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) wish.sub(fwd);
+      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) wish.add(right);
+      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) wish.sub(right);
+      if (wish.lengthSq() > 0) wish.normalize();
+    }
 
     const speed = this.running ? RUN_SPEED : WALK_SPEED;
     this.velocity.x = wish.x * speed;
     this.velocity.z = wish.z * speed;
 
     // ----- Vertical (gravity / jump) -----
-    if (this.keys.has('Space') && this.onGround) {
+    if (this.locked && this.keys.has('Space') && this.onGround) {
       this.velocity.y = JUMP_VELOCITY;
       this.onGround = false;
     }
@@ -146,7 +148,10 @@ export class Player {
       this.velocity.set(0, 0, 0);
     }
 
-    // ----- Sync camera -----
+    this.syncCamera();
+  }
+
+  syncCamera() {
     this.camera.position.copy(this.position);
     const dir = this.getLookDirection();
     this.camera.lookAt(
