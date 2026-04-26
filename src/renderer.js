@@ -7,6 +7,9 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.camera = { x: 0, y: 0 };
     this.scale = TILE_SIZE;
+    this.isoX = 0.86;
+    this.isoY = 0.5;
+    this.blockDepth = 0.38;
     this.viewWidth = 0;
     this.viewHeight = 0;
     this.resize();
@@ -15,8 +18,8 @@ export class Renderer {
   resize() {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
-    this.viewWidth = Math.ceil(this.canvas.width / this.scale) + 2;
-    this.viewHeight = Math.ceil(this.canvas.height / this.scale) + 2;
+    this.viewWidth = Math.ceil(this.canvas.width / (this.scale * this.isoX)) + 8;
+    this.viewHeight = Math.ceil(this.canvas.height / (this.scale * this.isoY)) + 8;
   }
 
   render(game) {
@@ -82,10 +85,16 @@ export class Renderer {
     this.drawUI(game);
   }
 
-  worldToScreen(wx, wy) {
+  worldToScreen(wx, wy, wz = 0) {
+    const halfW = this.scale * this.isoX * 0.5;
+    const halfH = this.scale * this.isoY * 0.5;
+    const cx = (wx - this.camera.x) * this.scale * this.isoX;
+    const cy = (wy - this.camera.y) * this.scale * this.isoY;
     return {
-      x: (wx - this.camera.x) * this.scale,
-      y: (wy - this.camera.y) * this.scale,
+      x: (cx - cy) + this.canvas.width / 2,
+      y: (cx + cy) * 0.5 + this.canvas.height * 0.2 - wz * this.scale * this.blockDepth,
+      halfW,
+      halfH,
     };
   }
 
@@ -94,49 +103,81 @@ export class Renderer {
     const info = TILE_INFO[tile];
     if (!info) return;
 
-    const { x: sx, y: sy } = this.worldToScreen(x, y);
-    if (sx < -this.scale || sx > this.canvas.width || sy < -this.scale || sy > this.canvas.height) return;
+    const { x: sx, y: sy, halfW, halfH } = this.worldToScreen(x + 0.5, y + 0.5, 0);
+    if (sx < -this.scale || sx > this.canvas.width + this.scale || sy < -this.scale || sy > this.canvas.height + this.scale) return;
 
     const { ctx } = this;
+    const depth = this.scale * this.blockDepth * (info.solid ? 1 : 0.2);
 
-    // Base color
+    // Top face
     ctx.fillStyle = info.color;
-    ctx.fillRect(sx, sy, this.scale, this.scale);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - halfH);
+    ctx.lineTo(sx + halfW, sy);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Side faces for voxel-like depth
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(sx + halfW, sy);
+    ctx.lineTo(sx + halfW, sy + depth);
+    ctx.lineTo(sx, sy + halfH + depth);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + halfH);
+    ctx.lineTo(sx, sy + halfH + depth);
+    ctx.lineTo(sx - halfW, sy + depth);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.fill();
 
     // Tile details
     switch (tile) {
       case TILES.TREE:
-        this.drawTree(sx, sy);
+        this.drawTree(sx - halfW * 0.35, sy - halfH * 1.5);
         break;
       case TILES.BERRY_BUSH:
-        this.drawBush(sx, sy);
+        this.drawBush(sx - halfW * 0.35, sy - halfH * 1.1);
         break;
       case TILES.WATER:
-        this.drawWater(sx, sy, x, y);
+        this.drawWater(sx - halfW, sy - halfH * 0.9, x, y);
         break;
       case TILES.TORCH:
-        this.drawTorch(sx, sy);
+        this.drawTorch(sx - halfW * 0.4, sy - halfH * 1.1);
         break;
       case TILES.CAMPFIRE:
-        this.drawCampfire(sx, sy);
+        this.drawCampfire(sx - halfW * 0.4, sy - halfH * 0.8);
         break;
       case TILES.CHEST:
-        this.drawChestTile(sx, sy);
+        this.drawChestTile(sx - halfW * 0.45, sy - halfH * 0.95);
         break;
       case TILES.BED:
-        this.drawBedTile(sx, sy);
+        this.drawBedTile(sx - halfW * 0.45, sy - halfH * 0.95);
         break;
       case TILES.FLOWER:
-        this.drawFlower(sx, sy);
+        this.drawFlower(sx - halfW * 0.35, sy - halfH * 1.0);
         break;
       case TILES.IRON_ORE:
-        this.drawOre(sx, sy);
+        this.drawOre(sx - halfW * 0.5, sy - halfH * 0.85);
         break;
     }
 
     // Grid lines (subtle)
-    ctx.strokeStyle = 'rgba(0,0,0,0.05)';
-    ctx.strokeRect(sx, sy, this.scale, this.scale);
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - halfH);
+    ctx.lineTo(sx + halfW, sy);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.stroke();
   }
 
   drawTree(sx, sy) {
@@ -281,7 +322,7 @@ export class Renderer {
 
   drawPlayer(player, gameTime) {
     const { ctx } = this;
-    const { x: sx, y: sy } = this.worldToScreen(player.x, player.y);
+    const { x: sx, y: sy } = this.worldToScreen(player.x, player.y, 0.4);
     const s = this.scale;
 
     // Blink when invincible
@@ -324,7 +365,7 @@ export class Renderer {
 
   drawCompanion(companion, gameTime) {
     const { ctx } = this;
-    const { x: sx, y: sy } = this.worldToScreen(companion.x, companion.y);
+    const { x: sx, y: sy } = this.worldToScreen(companion.x, companion.y, 0.4);
     const s = this.scale;
     const bob = Math.sin(companion.bobTimer) * 2;
 
@@ -371,7 +412,7 @@ export class Renderer {
 
   drawEnemy(enemy, gameTime) {
     const { ctx } = this;
-    const { x: sx, y: sy } = this.worldToScreen(enemy.x, enemy.y);
+    const { x: sx, y: sy } = this.worldToScreen(enemy.x, enemy.y, 0.35);
     const s = this.scale * enemy.size;
 
     if (!enemy.alive) {
@@ -439,7 +480,7 @@ export class Renderer {
 
   drawChatBubble(companion) {
     const { ctx } = this;
-    const { x: sx, y: sy } = this.worldToScreen(companion.x, companion.y);
+    const { x: sx, y: sy } = this.worldToScreen(companion.x, companion.y, 0.4);
     const s = this.scale;
 
     const text = companion.chatMessage;
@@ -474,41 +515,59 @@ export class Renderer {
   drawMiningProgress(player) {
     const { ctx } = this;
     const target = player.miningTarget;
-    const { x: sx, y: sy } = this.worldToScreen(target.x, target.y);
+    const { x: sx, y: sy, halfW, halfH } = this.worldToScreen(target.x + 0.5, target.y + 0.5);
     const s = this.scale;
 
     const progress = Math.min(1, player.miningProgress / (player.miningTarget ? 30 : 1));
 
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - halfH);
+    ctx.lineTo(sx + halfW, sy);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.stroke();
 
     // Crack overlay
     ctx.fillStyle = `rgba(0,0,0,${progress * 0.5})`;
-    ctx.fillRect(sx, sy, s, s);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - halfH);
+    ctx.lineTo(sx + halfW, sy);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.fill();
 
     // Progress bar
     ctx.fillStyle = '#333';
-    ctx.fillRect(sx, sy + s - 4, s, 4);
+    ctx.fillRect(sx - halfW, sy + halfH + 2, halfW * 2, 4);
     ctx.fillStyle = '#FFD54F';
-    ctx.fillRect(sx, sy + s - 4, s * progress, 4);
+    ctx.fillRect(sx - halfW, sy + halfH + 2, halfW * 2 * progress, 4);
   }
 
   drawWorkProgress(companion) {
     if (!companion.gatherTarget) return;
     const { ctx } = this;
-    const { x: sx, y: sy } = this.worldToScreen(companion.gatherTarget.x, companion.gatherTarget.y);
+    const { x: sx, y: sy, halfW, halfH } = this.worldToScreen(companion.gatherTarget.x + 0.5, companion.gatherTarget.y + 0.5);
     const s = this.scale;
     const progress = Math.min(1, companion.workProgress / 30);
 
     ctx.strokeStyle = '#FFD54F';
     ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 1, sy + 1, s - 2, s - 2);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - halfH);
+    ctx.lineTo(sx + halfW, sy);
+    ctx.lineTo(sx, sy + halfH);
+    ctx.lineTo(sx - halfW, sy);
+    ctx.closePath();
+    ctx.stroke();
 
     ctx.fillStyle = '#333';
-    ctx.fillRect(sx, sy + s - 3, s, 3);
+    ctx.fillRect(sx - halfW, sy + halfH + 2, halfW * 2, 3);
     ctx.fillStyle = '#FF9800';
-    ctx.fillRect(sx, sy + s - 3, s * progress, 3);
+    ctx.fillRect(sx - halfW, sy + halfH + 2, halfW * 2 * progress, 3);
   }
 
   drawNightOverlay(world, timeOfDay) {
