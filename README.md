@@ -1,69 +1,30 @@
-# AI Craft World / AIクラフトワールド
+# Browser Minecraft Clone (Web版)
 
-**話しかけるだけで仲間が働くクラフトゲーム**
+YouTube動画を参考にした、**ブラウザだけで遊べるMinecraft風のミニゲーム**です。
 
-A 2D craft game where you explore, build, and survive alongside an AI companion
-who understands natural language commands.
+## できること
 
-## Features
+- 3Dボクセル地形の自動生成
+- 一人称視点で移動（WASD + マウス）
+- 左クリックでブロック破壊
+- 右クリックでブロック設置
+- 1〜5キーで設置ブロックを切り替え
 
-- Procedurally generated world with 5 biomes (Forest, Plains, Desert, Mountains, Snow)
-- AI companion "Airi" who follows natural language commands
-- Resource gathering, crafting, and building
-- Day/night cycle with enemy spawning
-- Block placement and structure building
-- Inventory and crafting system
+## 操作
 
-## AI Companion Commands
+- `WASD` : 移動
+- `マウス` : 視点移動
+- `Space` : ジャンプ
+- `Shift` : 下降
+- `左クリック` : ブロック破壊
+- `右クリック` : ブロック設置
+- `1-5` : ブロック種類の切り替え
 
-| Command | Action |
-|---------|--------|
-| 木を集めて / Gather wood | Companion harvests trees |
-| 石を掘って / Mine stone | Companion mines stone |
-| 家を建てて / Build house | Companion builds a small house |
-| 拠点に戻って / Return base | Companion returns to player |
-| ついてきて / Follow me | Companion follows player |
-| 敵を倒して / Fight | Companion enters combat mode |
-| 状態 / Status | Check companion status |
-
-## Controls
-
-| Key | Action |
-|-----|--------|
-| WASD / Arrow Keys | Move |
-| Space | Mine / Attack |
-| Q | Place block |
-| E | Eat food |
-| C | Open crafting menu |
-| 1-0 | Select hotbar slot |
-| Enter | Talk to AI companion |
-
-## How to Run
+## 起動方法
 
 ```bash
-# Serve locally (any static file server works)
-npx serve .
-
-# Or simply open index.html in a browser
+npm install
+npm run dev
 ```
 
-## Tech Stack
-
-- Pure JavaScript (ES Modules)
-- HTML5 Canvas for rendering
-- Simplex noise for procedural world generation
-- A* pathfinding for AI navigation
-
-## Architecture
-
-```
-src/
-├── constants.js   # Game constants, tile/item/recipe definitions
-├── noise.js       # Simplex noise for world generation
-├── world.js       # World generation, pathfinding, light map
-├── player.js      # Player movement, inventory, crafting, combat
-├── companion.js   # AI companion with NLP command processing
-├── enemies.js     # Enemy AI and spawn management
-├── renderer.js    # Canvas-based 2D renderer with UI
-└── game.js        # Main game loop, input handling, state management
-```
+または `index.html` を直接ブラウザで開いても動作します（CDNに接続できる環境）。
