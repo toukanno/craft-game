@@ -1,315 +1,224 @@
-import { PLAYER_SPEED, PLAYER_MAX_HP, PLAYER_MAX_HUNGER, PLAYER_INVENTORY_SIZE,
-         PLAYER_REACH, TILE_INFO, ITEMS, INVINCIBILITY_FRAMES } from './constants.js';
+// First-person voxel player: pointer-lock camera + AABB physics + block interaction.
+import * as THREE from 'three';
+import { isSolid, BLOCK } from './blocks.js';
+import { WORLD_HEIGHT } from './world.js';
+
+const GRAVITY = 28;
+const JUMP_VELOCITY = 9.2;
+const WALK_SPEED = 4.8;
+const RUN_SPEED = 7.6;
+const MAX_FALL_SPEED = 50;
+
+// Player AABB extents around the camera position
+const HALF_W = 0.3;
+const HEAD_HEIGHT = 0.2;   // distance from camera (eyes) to top of head
+const FEET_DROP = 1.6;     // distance from camera down to feet
 
 export class Player {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.vx = 0;
-    this.vy = 0;
-    this.hp = PLAYER_MAX_HP;
-    this.maxHp = PLAYER_MAX_HP;
-    this.hunger = PLAYER_MAX_HUNGER;
-    this.maxHunger = PLAYER_MAX_HUNGER;
-    this.inventory = []; // { item: string, count: number }
-    this.selectedSlot = 0;
-    this.direction = 'down'; // up, down, left, right
-    this.mining = false;
-    this.miningProgress = 0;
-    this.miningTarget = null;
-    this.invincibleTimer = 0;
-    this.attackCooldown = 0;
-    this.speed = PLAYER_SPEED;
-    this.spawnPoint = { x, y }; // Updated when sleeping in a bed
+  constructor(camera, world, domElement) {
+    this.camera = camera;
+    this.world = world;
+    this.dom = domElement;
 
-    // Initialize empty inventory
-    for (let i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
-      this.inventory.push(null);
-    }
+    this.position = new THREE.Vector3(0, WORLD_HEIGHT - 5, 0);
+    this.velocity = new THREE.Vector3(0, 0, 0);
+    this.onGround = false;
+
+    this.yaw = 0;
+    this.pitch = 0;
+
+    this.keys = new Set();
+    this.mouseSensitivity = 0.0022;
+    this.locked = false;
+    this.running = false;
+
+    this.placeCooldown = 0;
+    this.breakCooldown = 0;
+
+    this._tmpVec = new THREE.Vector3();
+    this._forward = new THREE.Vector3();
+    this._right = new THREE.Vector3();
+
+    this._installInput();
+    this._spawn();
   }
 
-  update(keys, world, dt) {
-    // Movement
-    this.vx = 0;
-    this.vy = 0;
-
-    if (keys['ArrowUp'] || keys['KeyW']) { this.vy = -1; this.direction = 'up'; }
-    if (keys['ArrowDown'] || keys['KeyS']) { this.vy = 1; this.direction = 'down'; }
-    if (keys['ArrowLeft'] || keys['KeyA']) { this.vx = -1; this.direction = 'left'; }
-    if (keys['ArrowRight'] || keys['KeyD']) { this.vx = 1; this.direction = 'right'; }
-
-    // Normalize diagonal movement
-    if (this.vx !== 0 && this.vy !== 0) {
-      const len = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-      this.vx /= len;
-      this.vy /= len;
-    }
-
-    // Apply speed
-    const newX = this.x + this.vx * this.speed * dt;
-    const newY = this.y + this.vy * this.speed * dt;
-
-    // Collision detection
-    if (!world.isSolid(Math.floor(newX), Math.floor(this.y))) {
-      this.x = newX;
-    }
-    if (!world.isSolid(Math.floor(this.x), Math.floor(newY))) {
-      this.y = newY;
-    }
-
-    // Clamp to world bounds
-    this.x = Math.max(0.5, Math.min(world.width - 0.5, this.x));
-    this.y = Math.max(0.5, Math.min(world.height - 0.5, this.y));
-
-    // Timers
-    if (this.invincibleTimer > 0) this.invincibleTimer -= dt * 60;
-    if (this.attackCooldown > 0) this.attackCooldown -= dt * 60;
-
-    // Hunger drain
-    this.hunger -= dt * 0.15;
-    if (this.hunger <= 0) {
-      this.hunger = 0;
-      this.hp -= dt * 2; // Starving
-    } else if (this.hunger > 50) {
-      this.hp = Math.min(this.maxHp, this.hp + dt * 0.5); // Regen when well-fed
-    }
-  }
-
-  getFacingTile() {
-    let tx = Math.floor(this.x);
-    let ty = Math.floor(this.y);
-
-    switch (this.direction) {
-      case 'up': ty -= 1; break;
-      case 'down': ty += 1; break;
-      case 'left': tx -= 1; break;
-      case 'right': tx += 1; break;
-    }
-    return { x: tx, y: ty };
-  }
-
-  canReach(tx, ty) {
-    const dx = (tx + 0.5) - this.x;
-    const dy = (ty + 0.5) - this.y;
-    return Math.sqrt(dx * dx + dy * dy) <= PLAYER_REACH;
-  }
-
-  mine(world) {
-    const target = this.getFacingTile();
-    if (!this.canReach(target.x, target.y)) return;
-
-    const tile = world.getTile(target.x, target.y);
-    const info = TILE_INFO[tile];
-    if (!info || !info.mineable) return;
-
-    // Check tool requirement
-    if (info.tool === 'pickaxe' && !this.hasTool('pickaxe')) return;
-
-    if (!this.miningTarget || this.miningTarget.x !== target.x || this.miningTarget.y !== target.y) {
-      this.miningTarget = target;
-      this.miningProgress = 0;
-    }
-
-    // Tool speed bonus
-    let speedMultiplier = 1;
-    const tool = this.getEquippedTool();
-    if (tool) {
-      const toolInfo = ITEMS[tool.item];
-      if (toolInfo?.tool === info.tool || toolInfo?.tool === 'axe' && tile === 6) {
-        speedMultiplier = 1 + toolInfo.power;
+  _spawn() {
+    // Find a safe surface above sea level around (0,0)
+    for (let y = WORLD_HEIGHT - 1; y > 0; y--) {
+      const id = this.world.getBlock(0, y, 0);
+      if (isSolid(id)) {
+        this.position.set(0.5, y + 2.5, 0.5);
+        return;
       }
     }
+    this.position.set(0.5, WORLD_HEIGHT - 5, 0.5);
+  }
 
-    this.miningProgress += speedMultiplier;
-    this.mining = true;
+  _installInput() {
+    document.addEventListener('keydown', (e) => {
+      this.keys.add(e.code);
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.running = true;
+    });
+    document.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.running = false;
+    });
 
-    if (this.miningProgress >= info.time) {
-      // Drop item
-      if (info.drop) {
-        this.addItem(info.drop, 1);
-      }
-      world.setTile(target.x, target.y, info.drop === 'wood' ? 1 : 0); // Replace with grass or air
-      this.miningProgress = 0;
-      this.miningTarget = null;
-      this.mining = false;
-      return true;
+    document.addEventListener('mousemove', (e) => {
+      if (!this.locked) return;
+      this.yaw -= e.movementX * this.mouseSensitivity;
+      this.pitch -= e.movementY * this.mouseSensitivity;
+      const limit = Math.PI / 2 - 0.01;
+      if (this.pitch > limit) this.pitch = limit;
+      if (this.pitch < -limit) this.pitch = -limit;
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === this.dom;
+    });
+  }
+
+  requestLock() {
+    this.dom.requestPointerLock?.();
+  }
+
+  // Forward direction in the XZ plane based on yaw
+  getForward(out = this._forward) {
+    out.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    return out;
+  }
+
+  getRight(out = this._right) {
+    out.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    return out;
+  }
+
+  getLookDirection(out = new THREE.Vector3()) {
+    out.set(
+      -Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * Math.cos(this.pitch),
+    );
+    return out;
+  }
+
+  update(dt) {
+    if (this.placeCooldown > 0) this.placeCooldown -= dt;
+    if (this.breakCooldown > 0) this.breakCooldown -= dt;
+
+    // ----- Compute desired horizontal motion -----
+    const wish = this._tmpVec.set(0, 0, 0);
+    const fwd = this.getForward();
+    const right = this.getRight();
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) wish.add(fwd);
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) wish.sub(fwd);
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) wish.add(right);
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) wish.sub(right);
+    if (wish.lengthSq() > 0) wish.normalize();
+
+    const speed = this.running ? RUN_SPEED : WALK_SPEED;
+    this.velocity.x = wish.x * speed;
+    this.velocity.z = wish.z * speed;
+
+    // ----- Vertical (gravity / jump) -----
+    if (this.keys.has('Space') && this.onGround) {
+      this.velocity.y = JUMP_VELOCITY;
+      this.onGround = false;
     }
-    return false;
+    this.velocity.y -= GRAVITY * dt;
+    if (this.velocity.y < -MAX_FALL_SPEED) this.velocity.y = -MAX_FALL_SPEED;
+
+    // ----- Apply with collision (axis by axis) -----
+    this._moveAxis('x', this.velocity.x * dt);
+    this._moveAxis('z', this.velocity.z * dt);
+    const collidedY = this._moveAxis('y', this.velocity.y * dt);
+    if (collidedY) {
+      if (this.velocity.y < 0) this.onGround = true;
+      this.velocity.y = 0;
+    } else {
+      this.onGround = false;
+    }
+
+    // Anti-fall floor
+    if (this.position.y < -10) {
+      this._spawn();
+      this.velocity.set(0, 0, 0);
+    }
+
+    // ----- Sync camera -----
+    this.camera.position.copy(this.position);
+    const dir = this.getLookDirection();
+    this.camera.lookAt(
+      this.position.x + dir.x,
+      this.position.y + dir.y,
+      this.position.z + dir.z,
+    );
   }
 
-  stopMining() {
-    this.mining = false;
-    this.miningProgress = 0;
-    this.miningTarget = null;
-  }
-
-  placeBlock(world) {
-    const target = this.getFacingTile();
-    if (!this.canReach(target.x, target.y)) return false;
-    if (world.isSolid(target.x, target.y)) return false;
-
-    const slot = this.inventory[this.selectedSlot];
-    if (!slot) return false;
-
-    const itemInfo = ITEMS[slot.item];
-    if (!itemInfo?.placeTile) return false;
-
-    // Don't place on self
-    if (Math.floor(this.x) === target.x && Math.floor(this.y) === target.y) return false;
-
-    world.setTile(target.x, target.y, itemInfo.placeTile);
-    this.removeItem(this.selectedSlot, 1);
+  _moveAxis(axis, delta) {
+    if (delta === 0) return false;
+    const newPos = this.position.clone();
+    newPos[axis] += delta;
+    if (!this._collides(newPos)) {
+      this.position[axis] = newPos[axis];
+      return false;
+    }
+    // Try smaller steps until contact (one block)
+    const step = Math.sign(delta) * 0.05;
+    let moved = 0;
+    while (Math.abs(moved + step) <= Math.abs(delta)) {
+      const test = this.position.clone();
+      test[axis] += step;
+      if (this._collides(test)) break;
+      this.position[axis] = test[axis];
+      moved += step;
+    }
     return true;
   }
 
-  attack(enemies) {
-    if (this.attackCooldown > 0) return;
+  _collides(pos) {
+    // AABB: from (pos.x-HALF_W, pos.y-FEET_DROP, pos.z-HALF_W)
+    //         to (pos.x+HALF_W, pos.y+HEAD_HEIGHT, pos.z+HALF_W)
+    const minX = Math.floor(pos.x - HALF_W);
+    const maxX = Math.floor(pos.x + HALF_W);
+    const minY = Math.floor(pos.y - FEET_DROP);
+    const maxY = Math.floor(pos.y + HEAD_HEIGHT);
+    const minZ = Math.floor(pos.z - HALF_W);
+    const maxZ = Math.floor(pos.z + HALF_W);
 
-    const slot = this.inventory[this.selectedSlot];
-    let damage = 5; // Fist damage
-    if (slot) {
-      const info = ITEMS[slot.item];
-      if (info?.damage) damage = info.damage;
-    }
-
-    const facing = this.getFacingTile();
-    const attackRange = 1.8;
-
-    for (const enemy of enemies) {
-      const dx = enemy.x - this.x;
-      const dy = enemy.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist <= attackRange) {
-        enemy.takeDamage(damage, this);
-        this.attackCooldown = 20;
-        return true;
-      }
-    }
-    return false;
-  }
-
-  takeDamage(amount) {
-    if (this.invincibleTimer > 0) return;
-    this.hp -= amount;
-    this.invincibleTimer = INVINCIBILITY_FRAMES;
-    if (this.hp <= 0) {
-      this.hp = 0;
-    }
-  }
-
-  eat() {
-    // Find food in inventory
-    for (let i = 0; i < this.inventory.length; i++) {
-      const slot = this.inventory[i];
-      if (slot && (slot.item === 'food' || slot.item === 'cooked_food')) {
-        const heal = slot.item === 'cooked_food' ? 30 : 15;
-        this.hunger = Math.min(this.maxHunger, this.hunger + heal);
-        this.hp = Math.min(this.maxHp, this.hp + (slot.item === 'cooked_food' ? 15 : 5));
-        this.removeItem(i, 1);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  addItem(itemId, count = 1) {
-    // Stack with existing
-    for (let i = 0; i < this.inventory.length; i++) {
-      const slot = this.inventory[i];
-      if (slot && slot.item === itemId) {
-        const maxStack = ITEMS[itemId]?.stackSize || 64;
-        const canAdd = Math.min(count, maxStack - slot.count);
-        if (canAdd > 0) {
-          slot.count += canAdd;
-          count -= canAdd;
-          if (count <= 0) return true;
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        for (let x = minX; x <= maxX; x++) {
+          if (isSolid(this.world.getBlock(x, y, z))) return true;
         }
       }
     }
-
-    // Find empty slot
-    while (count > 0) {
-      const emptySlot = this.inventory.findIndex(s => s === null);
-      if (emptySlot === -1) return false; // Inventory full
-      const maxStack = ITEMS[itemId]?.stackSize || 64;
-      const toAdd = Math.min(count, maxStack);
-      this.inventory[emptySlot] = { item: itemId, count: toAdd };
-      count -= toAdd;
-    }
-    return true;
-  }
-
-  removeItem(slotIndex, count = 1) {
-    const slot = this.inventory[slotIndex];
-    if (!slot) return false;
-    slot.count -= count;
-    if (slot.count <= 0) {
-      this.inventory[slotIndex] = null;
-    }
-    return true;
-  }
-
-  hasItem(itemId, count = 1) {
-    let total = 0;
-    for (const slot of this.inventory) {
-      if (slot && slot.item === itemId) total += slot.count;
-    }
-    return total >= count;
-  }
-
-  countItem(itemId) {
-    let total = 0;
-    for (const slot of this.inventory) {
-      if (slot && slot.item === itemId) total += slot.count;
-    }
-    return total;
-  }
-
-  removeItemByType(itemId, count) {
-    let remaining = count;
-    for (let i = 0; i < this.inventory.length && remaining > 0; i++) {
-      const slot = this.inventory[i];
-      if (slot && slot.item === itemId) {
-        const toRemove = Math.min(remaining, slot.count);
-        slot.count -= toRemove;
-        remaining -= toRemove;
-        if (slot.count <= 0) this.inventory[i] = null;
-      }
-    }
-    return remaining <= 0;
-  }
-
-  hasTool(toolType) {
-    for (const slot of this.inventory) {
-      if (slot) {
-        const info = ITEMS[slot.item];
-        if (info?.tool === toolType) return true;
-      }
-    }
     return false;
   }
 
-  getEquippedTool() {
-    return this.inventory[this.selectedSlot];
+  // ---------- Block targeting ----------
+  raycastTarget(maxDist = 6) {
+    return this.world.raycast(
+      this.position.clone(),
+      this.getLookDirection(),
+      maxDist,
+    );
   }
 
-  craft(recipe) {
-    // Check materials
-    for (const [item, count] of Object.entries(recipe.materials)) {
-      if (!this.hasItem(item, count)) return false;
-    }
-
-    // Remove materials
-    for (const [item, count] of Object.entries(recipe.materials)) {
-      this.removeItemByType(item, count);
-    }
-
-    // Add result
-    this.addItem(recipe.result, recipe.amount);
-    return true;
-  }
-
-  get isAlive() {
-    return this.hp > 0;
+  // Return true if a position would intersect the player (so we don't place blocks inside ourselves)
+  wouldIntersectPlayer(bx, by, bz) {
+    const minX = bx, maxX = bx + 1;
+    const minY = by, maxY = by + 1;
+    const minZ = bz, maxZ = bz + 1;
+    const pminX = this.position.x - HALF_W;
+    const pmaxX = this.position.x + HALF_W;
+    const pminY = this.position.y - FEET_DROP;
+    const pmaxY = this.position.y + HEAD_HEIGHT;
+    const pminZ = this.position.z - HALF_W;
+    const pmaxZ = this.position.z + HALF_W;
+    return (pmaxX > minX && pminX < maxX
+         && pmaxY > minY && pminY < maxY
+         && pmaxZ > minZ && pminZ < maxZ);
   }
 }

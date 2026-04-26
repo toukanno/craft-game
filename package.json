@@ -1,12 +1,12 @@
 {
-  "name": "ai-craft-world",
+  "name": "craft-world-3d",
   "version": "0.1.0",
-  "description": "AI Craft World - 話しかけるだけで仲間が働くクラフトゲーム",
+  "description": "Craft World 3D - ブラウザで遊べる3Dクラフトゲーム (Minecraft-like browser voxel game)",
   "type": "module",
   "scripts": {
     "dev": "npx serve .",
     "start": "npx serve ."
   },
-  "keywords": ["game", "craft", "ai", "companion"],
+  "keywords": ["game", "voxel", "minecraft", "threejs", "browser"],
   "license": "MIT"
 }
